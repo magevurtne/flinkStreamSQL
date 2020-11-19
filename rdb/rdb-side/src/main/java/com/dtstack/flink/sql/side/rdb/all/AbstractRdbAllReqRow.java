@@ -39,8 +39,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -100,7 +102,7 @@ public abstract class AbstractRdbAllReqRow extends BaseAllReqRow {
         List<Integer> equalValIndex = sideInfo.getEqualValIndex();
         ArrayList<Object> inputParams = equalValIndex.stream()
                 .map(value::getField)
-                .filter(object -> null != object)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(ArrayList::new));
 
         if (inputParams.size() != equalValIndex.size() && sideInfo.getJoinType() == JoinType.LEFT) {
@@ -118,7 +120,7 @@ public abstract class AbstractRdbAllReqRow extends BaseAllReqRow {
             Row row = fillData(value, null);
             out.collect(row);
         } else if (!CollectionUtils.isEmpty(cacheList)) {
-            cacheList.stream().forEach(one -> out.collect(fillData(value, one)));
+            cacheList.forEach(one -> out.collect(RowDataConvert.convertToBaseRow(fillData(value, one))));
         }
     }
 
@@ -163,13 +165,17 @@ public abstract class AbstractRdbAllReqRow extends BaseAllReqRow {
         ResultSet resultSet = statement.executeQuery(sql);
 
         String[] sideFieldNames = StringUtils.split(sideInfo.getSideSelectFields(), ",");
-        String[] fields = sideInfo.getSideTableInfo().getFieldTypes();
+        String[] sideFieldTypes = sideInfo.getSideTableInfo().getFieldTypes();
+        Map<String, String> sideFieldNamesAndTypes = Maps.newHashMap();
+        for (int i = 0; i < sideFieldNames.length; i++) {
+            sideFieldNamesAndTypes.put(sideFieldNames[i], sideFieldTypes[i]);
+        }
+
         while (resultSet.next()) {
             Map<String, Object> oneRow = Maps.newHashMap();
             for (String fieldName : sideFieldNames) {
                 Object object = resultSet.getObject(fieldName.trim());
-                int fieldIndex = sideInfo.getSideTableInfo().getFieldList().indexOf(fieldName.trim());
-                object = SwitchUtil.getTarget(object, fields[fieldIndex]);
+                object = SwitchUtil.getTarget(object, sideFieldNamesAndTypes.get(fieldName));
                 oneRow.put(fieldName.trim(), object);
             }
 
